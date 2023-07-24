@@ -30,6 +30,7 @@ import (
 	_ "github.com/docker/distribution/registry/storage/driver/inmemory"
 	_ "github.com/docker/distribution/registry/storage/driver/middleware/cloudfront"
 	_ "github.com/docker/distribution/registry/storage/driver/middleware/redirect"
+	_ "github.com/docker/distribution/registry/storage/driver/obs"
 	_ "github.com/docker/distribution/registry/storage/driver/oss"
 	_ "github.com/docker/distribution/registry/storage/driver/s3-aws"
 	_ "github.com/docker/distribution/registry/storage/driver/swift"
@@ -57,6 +58,7 @@ func (s *RegistryCtl) Start() {
 		TLSConfig: common_http.NewServerTLSConfig(),
 	}
 	ctx := context.Background()
+	shutdown := make(chan struct{})
 	regCtl.RegisterOnShutdown(tracelib.InitGlobalTracer(ctx))
 	// graceful shutdown
 	go func() {
@@ -65,6 +67,8 @@ func (s *RegistryCtl) Start() {
 		<-sig
 		context, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
+		defer close(shutdown)
+
 		log.Infof("Got an interrupt, shutting down...")
 		if err := regCtl.Shutdown(context); err != nil {
 			log.Fatalf("Failed to shutdown registry controller: %v", err)
@@ -81,7 +85,7 @@ func (s *RegistryCtl) Start() {
 	} else {
 		err = regCtl.ListenAndServe()
 	}
-	<-ctx.Done()
+	<-shutdown
 	if err != nil {
 		log.Fatal(err)
 	}
